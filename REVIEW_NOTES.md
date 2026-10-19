@@ -12,6 +12,8 @@ Everything below was checked by hand against the code unless it says otherwise.
 
 ## 2. PR history
 
+**PR numbering:** #3 was merged by mistake, reverted in #4, and reopened as #5 for review.
+
 | PR | Title | State | Reviewed by Codzee? |
 |----|-------|-------|---------------------|
 | #1 | JWT auth | merged | No: merged before Codzee was installed |
@@ -26,15 +28,54 @@ Everything below was checked by hand against the code unless it says otherwise.
 - #5 was also opened before the install. It was reviewed after I commented `@codzee review` on it.
 - #4 exists because #3 was merged by mistake. #5 is the same change, reopened.
 
-## 3. PR #5: planted issues
+## 3. PR #1 and #2: planted issues
 
-| Planted issue | Result | Severity given |
-|---------------|--------|----------------|
-| List cache key has no user id | Caught | Critical |
-| List cache key has no page number | Partial: user id flagged, page not mentioned | - |
-| Update and delete do not invalidate the cache | Caught | Major |
-| N+1 tag queries in `listBookmarks` | Caught | Major (explained roughly 102 queries vs 2) |
-| Missing `await` on `clearListCache` | Missed | - |
+#1 and #2 were merged before Codzee was installed, so Codzee **never reviewed their diffs**. The tables
+below show whether Codzee later flagged each issue while reviewing a different PR (#5, #6 or #7), since it
+also reads the surrounding code on `main`. This is based on Codzee's summary comments.
+"Not flagged" means no finding appeared there, not that Codzee cannot detect the problem.
+
+**PR #1 (JWT auth)**
+
+| Planted issue | File | Codzee result | Note |
+|---------------|------|---------------|------|
+| JWT secret hardcoded in source | `src/services/tokens.js` | Not flagged | Moved to an env variable in #7 with no comment. Codzee's only secret finding is the placeholder in `.env.example`, a weakness of the fix. |
+| Token expiry not enforced (`ignoreExpiration: true`) | `src/services/tokens.js` | Not flagged | Fixed in #7 with no comment. |
+| Password logged on login | `src/routes/auth.js` | Caught (on #6) | Critical, and Codzee said it predates #6. It saw the line because #6 re-indented it. |
+| No ownership check on get, update and delete by id | `src/services/bookmarkService.js` | Partial (on #5) | Critical, but only the read path was reported. Update and delete were not mentioned. |
+
+**PR #2 (service layer and tests)**
+
+| Planted issue | File | Codzee result | Note |
+|---------------|------|---------------|------|
+| SQL injection: search concatenated into the query | `src/services/bookmarkService.js` | Caught (on #5) | Critical. |
+| Pagination offset off by one | `src/services/bookmarkService.js` | Caught (on #5) | Major: the first row of every page is skipped. |
+| Test that always passes (`deleteBookmark`) | `tests/bookmarkService.test.js` | Not flagged | Replaced in #7 with no comment. |
+| Error handler swallows errors and returns 200 | `src/plugins/errorHandler.js` | Partial (on #6) | Raised only as a test gap: production turns validation errors into 200. The handler itself was not called a defect. |
+
+**PR #3 versus #5.** The plan was to compare two reviews of the same Redis code. #3 was never reviewed, so
+that comparison is not possible. #5 has the first review, plus two re-reviews of later commits (section 6).
+
+## 4. Unplanted weaknesses
+
+These were not planted, but I expected a thorough reviewer to notice them.
+
+| Weakness | Where | Codzee result | Note |
+|----------|-------|---------------|------|
+| `KEYS` used instead of `SCAN` | `src/services/cache.js` | Flagged on #5 (Minor) | Fixed in `ca9a811`. |
+| Login timing reveals which emails exist | `src/routes/auth.js` | Flagged on #7 (Minor) | Fixed in #6. |
+| No rate limiting on login | `src/routes/auth.js` | Not flagged | Added in #6, which Codzee did review. |
+| Redis outage breaks every cached read | `src/routes/bookmarks.js` | Not seen in the summaries | Cache errors are not caught. |
+
+## 5. PR #5: planted issues
+
+| Planted issue | File | Result | Severity given |
+|---------------|------|--------|----------------|
+| List cache key has no user id | `src/services/cache.js` | Caught | Critical |
+| List cache key has no page number | `src/services/cache.js` | Partial: user id flagged, page not mentioned | - |
+| Update and delete do not invalidate the cache | `src/routes/bookmarks.js` | Caught | Major |
+| N+1 tag queries in `listBookmarks` | `src/services/bookmarkService.js` | Caught | Major (explained roughly 102 queries vs 2) |
+| Missing `await` on `clearListCache` | `src/routes/bookmarks.js` | Missed | - |
 
 **Score: 3 caught, 1 partial, 1 missed.**
 
@@ -44,7 +85,7 @@ Other valid findings on #5:
 - `config.js` accepts invalid TTL values such as `1.5` and `-5`, which cause 500s (Nice to have). This one was not planted.
 - Issues in code from merged PRs, outside the diff of #5: SQL injection in search (Critical), missing ownership check on bookmark read (Critical), and the pagination offset skipping the first row (Major). Codzee reviews surrounding code, not only changed lines.
 
-## 4. PR #5: re-review behaviour
+## 6. PR #5: re-review behaviour
 
 | Commit | What it was | Codzee result |
 |--------|-------------|---------------|
@@ -54,7 +95,7 @@ Other valid findings on #5:
 - Codzee correctly kept the issues that live on `main` open (SQL injection, ownership check, pagination offset), because #5 does not change them.
 - Codzee closed findings it had raised itself, which was the purpose of the second commit.
 
-## 5. PR #6 and PR #7: findings
+## 7. PR #6 and PR #7: findings
 
 All findings below were checked and are valid.
 
@@ -79,14 +120,14 @@ All findings below were checked and are valid.
 
 On both PRs, Codzee warned about merge conflicts between #5, #6 and #7. The warning was correct: all three edit overlapping files.
 
-## 6. Overall
+## 8. Overall
 
 - **False positives:** none found across all reviews.
 - **Missed:** the missing `await` on `clearListCache`, and the page number in the cache key (partial).
 - **Not reviewed:** #1, #2 and #3, which were merged before the install.
 - Sample size is small: three reviewed PRs and two re-reviews, one author, one codebase.
 
-## 7. Product issues observed
+## 9. Product issues observed
 
 **Report accuracy**
 
@@ -108,7 +149,7 @@ On both PRs, Codzee warned about merge conflicts between #5, #6 and #7. The warn
 - The bot edits the PR description to add its summary.
 - Review latency varied: #7 was quick, while #6 took several minutes with only a label showing.
 
-## 8. Next fixes (out of scope for this evaluation)
+## 10. Next fixes (out of scope for this evaluation)
 
 Open findings from #6 and #7, left as known follow-ups.
 
