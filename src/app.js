@@ -1,6 +1,7 @@
 const Fastify = require('fastify');
 const dbPlugin = require('./plugins/db');
 const authPlugin = require('./plugins/auth');
+const loginRateLimitPlugin = require('./plugins/loginRateLimit');
 const errorHandlerPlugin = require('./plugins/errorHandler');
 const authRoutes = require('./routes/auth');
 const bookmarkRoutes = require('./routes/bookmarks');
@@ -12,6 +13,7 @@ function buildApp(options = {}) {
   app.register(errorHandlerPlugin);
   app.register(dbPlugin);
   app.register(authPlugin);
+  app.register(loginRateLimitPlugin);
   app.register(authRoutes);
   app.register(bookmarkRoutes);
 

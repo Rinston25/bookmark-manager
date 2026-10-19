@@ -6,4 +6,7 @@ module.exports = {
   databaseUrl:
     process.env.DATABASE_URL || 'postgres://bookmarks:bookmarks@localhost:5432/bookmarks',
   redisUrl: process.env.REDIS_URL || 'redis://localhost:6379',
+  // Failed or successful, this many logins per IP + email are allowed in each window
+  loginRateLimitMax: Number(process.env.LOGIN_RATE_LIMIT_MAX) || 5,
+  loginRateLimitWindowSeconds: Number(process.env.LOGIN_RATE_LIMIT_WINDOW_SECONDS) || 900,
 };
