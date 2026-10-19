@@ -35,12 +35,7 @@ async function listBookmarks(db, userId, { page, limit, search, tag }) {
   );
 
   const listResult = await db.query(
-    `SELECT b.id, b.title, b.url, b.description, b.created_at,
-            COALESCE(
-              (SELECT array_agg(t.name ORDER BY t.name)
-                 FROM bookmark_tags bt JOIN tags t ON t.id = bt.tag_id
-                WHERE bt.bookmark_id = b.id),
-              '{}') AS tags
+    `SELECT b.id, b.title, b.url, b.description, b.created_at
        FROM bookmarks b
       WHERE ${whereClause}
       ORDER BY b.created_at DESC, b.id DESC
@@ -48,8 +43,15 @@ async function listBookmarks(db, userId, { page, limit, search, tag }) {
     [...params, limit, offset]
   );
 
+  // Load tags the same way getBookmark does so both endpoints return the same shape
+  const bookmarks = [];
+  for (const bookmarkRow of listResult.rows) {
+    const tags = await fetchTagNames(db, bookmarkRow.id);
+    bookmarks.push({ ...bookmarkRow, tags });
+  }
+
   return {
-    data: listResult.rows,
+    data: bookmarks,
     page,
     limit,
     total: Number(countResult.rows[0].count),
