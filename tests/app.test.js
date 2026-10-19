@@ -1,3 +1,4 @@
+require('./helpers/testEnv');
 const test = require('node:test');
 const assert = require('node:assert');
 const buildApp = require('../src/app');

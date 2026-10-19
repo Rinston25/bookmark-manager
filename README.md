@@ -10,7 +10,8 @@ A small REST API for saving, tagging and searching bookmarks.
 # 1. Install dependencies
 npm install
 
-# 2. Create your local config (defaults already match docker-compose.yml)
+# 2. Create your local config (defaults already match docker-compose.yml).
+#    Set JWT_SECRET in .env: the app refuses to start without it.
 cp .env.example .env
 
 # 3. Start PostgreSQL and Redis

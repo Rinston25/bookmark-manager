@@ -44,8 +44,6 @@ async function authRoutes(fastify) {
 
   // Check credentials and return a token
   fastify.post('/auth/login', { schema: { body: credentialsSchema } }, async (request, reply) => {
-    console.log('Login attempt:', request.body);
-
     const email = request.body.email.toLowerCase();
     const { rows } = await db.query(
       'SELECT id, email, password_hash FROM users WHERE email = $1',
