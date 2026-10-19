@@ -4,6 +4,7 @@ const Fastify = require('fastify');
 const bookmarkRoutes = require('../src/routes/bookmarks');
 const { createFakeDb } = require('./helpers/fakeDb');
 const { createFakeRedis } = require('./helpers/fakeRedis');
+const config = require('../src/config');
 const { listCacheKey, detailCacheKey } = require('../src/services/cache');
 
 const VALID_BODY = { title: 'New', url: 'https://example.com' };
@@ -37,6 +38,23 @@ test('the list is fetched in one query, with tags included', async (t) => {
 
   assert.strictEqual(db.calls.length, 2, 'one COUNT query and one list query');
   assert.ok(db.calls[1].sql.includes('array_agg'));
+});
+
+test('the second identical list request is a cache HIT and skips the database', async (t) => {
+  const { app, db, redis } = await buildRoutesApp(t, { dbHandler: listHandler });
+
+  const first = await app.inject({ method: 'GET', url: '/bookmarks' });
+  const queriesAfterFirst = db.calls.length;
+  const second = await app.inject({ method: 'GET', url: '/bookmarks' });
+
+  assert.strictEqual(first.headers['x-cache'], 'MISS');
+  assert.strictEqual(second.headers['x-cache'], 'HIT');
+  assert.deepStrictEqual(second.json(), first.json());
+  assert.strictEqual(db.calls.length, queriesAfterFirst, 'a HIT must not query the database');
+  assert.strictEqual(
+    redis.ttlSeconds.get(listCacheKey({ userId: 1, page: 1, limit: 20 })),
+    config.cacheTtlSeconds
+  );
 });
 
 test('two users never share a cached list', async (t) => {
@@ -109,5 +127,18 @@ test('a delete that finds nothing (404) leaves the cache alone', async (t) => {
   const response = await app.inject({ method: 'DELETE', url: '/bookmarks/5' });
 
   assert.strictEqual(response.statusCode, 404);
+  assert.strictEqual(redis.store.has(detailCacheKey(5)), true);
+});
+
+test('updating a bookmark that does not exist (404) leaves the cache alone', async (t) => {
+  const { app, redis } = await buildRoutesApp(t, { dbHandler: () => ({ rows: [] }) });
+  const listKey = listCacheKey({ userId: 1, page: 1, limit: 20 });
+  await redis.set(listKey, '{}');
+  await redis.set(detailCacheKey(5), '{}');
+
+  const response = await app.inject({ method: 'PUT', url: '/bookmarks/5', payload: VALID_BODY });
+
+  assert.strictEqual(response.statusCode, 404);
+  assert.strictEqual(redis.store.has(listKey), true);
   assert.strictEqual(redis.store.has(detailCacheKey(5)), true);
 });

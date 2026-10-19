@@ -1,7 +1,7 @@
 const test = require('node:test');
 const assert = require('node:assert');
 const { createFakeRedis } = require('./helpers/fakeRedis');
-const { listCacheKey, clearListCache } = require('../src/services/cache');
+const { listCacheKey, writeCache, clearListCache } = require('../src/services/cache');
 const { readCacheTtl } = require('../src/config');
 
 const baseKey = { userId: 1, page: 1, limit: 20 };
@@ -14,10 +14,22 @@ test('list cache keys differ by page', () => {
   assert.notStrictEqual(listCacheKey(baseKey), listCacheKey({ ...baseKey, page: 2 }));
 });
 
-test('a colon in the search text cannot make two different searches share a key', () => {
-  const first = listCacheKey({ ...baseKey, search: 'a:b', tag: '' });
-  const second = listCacheKey({ ...baseKey, search: 'a', tag: 'b' });
-  assert.notStrictEqual(first, second);
+test('a colon typed into search or tag cannot make two different searches share a key', () => {
+  // Without encoding, both of these would become "...:a:b:c"
+  const colonInSearch = listCacheKey({ ...baseKey, search: 'a:b', tag: 'c' });
+  const colonInTag = listCacheKey({ ...baseKey, search: 'a', tag: 'b:c' });
+
+  assert.notStrictEqual(colonInSearch, colonInTag);
+  assert.ok(colonInSearch.endsWith(':a%3Ab:c'));
+});
+
+test('writeCache stores the value as JSON with the given expiry in seconds', async () => {
+  const redis = createFakeRedis();
+
+  await writeCache(redis, 'some:key', { id: 1 }, 45);
+
+  assert.strictEqual(redis.store.get('some:key'), '{"id":1}');
+  assert.strictEqual(redis.ttlSeconds.get('some:key'), 45);
 });
 
 test('clearListCache removes only that user\'s lists, across every scan page', async () => {
