@@ -1,12 +1,4 @@
 const bookmarkService = require('../services/bookmarkService');
-const config = require('../config');
-const {
-  listCacheKey,
-  detailCacheKey,
-  readCache,
-  writeCache,
-  clearListCache,
-} = require('../services/cache');
 
 const bookmarkBodySchema = {
   type: 'object',
@@ -34,56 +26,29 @@ const listQuerySchema = {
   },
 };
 
-// Routes handle HTTP and caching; the work happens in bookmarkService
+// Routes only handle HTTP concerns; the work happens in bookmarkService
 async function bookmarkRoutes(fastify) {
-  const { db, redis } = fastify;
-  const cacheTtl = config.cacheTtlSeconds;
+  const { db } = fastify;
 
   // Every bookmark route requires a logged-in user
   const requireLogin = { preHandler: fastify.authenticate };
 
-  // List bookmarks (cached)
   fastify.get(
     '/bookmarks',
     { ...requireLogin, schema: { querystring: listQuerySchema } },
-    async (request, reply) => {
-      const { search, tag, limit } = request.query;
-
-      const cacheKey = listCacheKey({ search, tag, limit });
-      const cachedResponse = await readCache(redis, cacheKey);
-      if (cachedResponse) {
-        reply.header('X-Cache', 'HIT');
-        return cachedResponse;
-      }
-
-      const response = await bookmarkService.listBookmarks(db, request.user.id, request.query);
-
-      await writeCache(redis, cacheKey, response, cacheTtl);
-      reply.header('X-Cache', 'MISS');
-      return response;
+    async (request) => {
+      return bookmarkService.listBookmarks(db, request.user.id, request.query);
     }
   );
 
-  // Get a single bookmark (cached)
   fastify.get(
     '/bookmarks/:id',
     { ...requireLogin, schema: { params: idParamsSchema } },
     async (request, reply) => {
-      const { id } = request.params;
-
-      const cachedBookmark = await readCache(redis, detailCacheKey(id));
-      if (cachedBookmark) {
-        reply.header('X-Cache', 'HIT');
-        return cachedBookmark;
-      }
-
-      const bookmark = await bookmarkService.getBookmark(db, id);
+      const bookmark = await bookmarkService.getBookmark(db, request.params.id);
       if (!bookmark) {
         return reply.code(404).send({ error: 'Bookmark not found' });
       }
-
-      await writeCache(redis, detailCacheKey(id), bookmark, cacheTtl);
-      reply.header('X-Cache', 'MISS');
       return bookmark;
     }
   );
@@ -93,10 +58,6 @@ async function bookmarkRoutes(fastify) {
     { ...requireLogin, schema: { body: bookmarkBodySchema } },
     async (request, reply) => {
       const bookmark = await bookmarkService.createBookmark(db, request.user.id, request.body);
-
-      // A new bookmark changes every list page, so drop the cached lists
-      clearListCache(redis);
-
       return reply.code(201).send(bookmark);
     }
   );
