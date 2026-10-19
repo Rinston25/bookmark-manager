@@ -41,78 +41,93 @@ const LIST_FILTERS = `
 async function bookmarkRoutes(fastify) {
   const { db } = fastify;
 
-  // List bookmarks with pagination, title search and tag filter
-  fastify.get('/bookmarks', { schema: { querystring: listQuerySchema } }, async (request) => {
-    const { page, limit, search, tag } = request.query;
-    const offset = (page - 1) * limit;
-    const filterParams = [request.user.id, search || null, tag ? tag.toLowerCase() : null];
+  // Every bookmark route requires a logged-in user
+  const requireLogin = { preHandler: fastify.authenticate };
 
-    const countResult = await db.query(
-      `SELECT COUNT(*) FROM bookmarks b WHERE ${LIST_FILTERS}`,
-      filterParams
-    );
+  // List the current user's bookmarks with pagination, title search and tag filter
+  fastify.get(
+    '/bookmarks',
+    { ...requireLogin, schema: { querystring: listQuerySchema } },
+    async (request) => {
+      const { page, limit, search, tag } = request.query;
+      const offset = (page - 1) * limit;
+      const filterParams = [request.user.id, search || null, tag ? tag.toLowerCase() : null];
 
-    const listResult = await db.query(
-      `SELECT b.id, b.title, b.url, b.description, b.created_at,
-              COALESCE(
-                (SELECT array_agg(t.name ORDER BY t.name)
-                   FROM bookmark_tags bt JOIN tags t ON t.id = bt.tag_id
-                  WHERE bt.bookmark_id = b.id),
-                '{}') AS tags
-         FROM bookmarks b
-        WHERE ${LIST_FILTERS}
-        ORDER BY b.created_at DESC, b.id DESC
-        LIMIT $4 OFFSET $5`,
-      [...filterParams, limit, offset]
-    );
+      const countResult = await db.query(
+        `SELECT COUNT(*) FROM bookmarks b WHERE ${LIST_FILTERS}`,
+        filterParams
+      );
 
-    return {
-      data: listResult.rows,
-      page,
-      limit,
-      total: Number(countResult.rows[0].count),
-    };
-  });
+      const listResult = await db.query(
+        `SELECT b.id, b.title, b.url, b.description, b.created_at,
+                COALESCE(
+                  (SELECT array_agg(t.name ORDER BY t.name)
+                     FROM bookmark_tags bt JOIN tags t ON t.id = bt.tag_id
+                    WHERE bt.bookmark_id = b.id),
+                  '{}') AS tags
+           FROM bookmarks b
+          WHERE ${LIST_FILTERS}
+          ORDER BY b.created_at DESC, b.id DESC
+          LIMIT $4 OFFSET $5`,
+        [...filterParams, limit, offset]
+      );
+
+      return {
+        data: listResult.rows,
+        page,
+        limit,
+        total: Number(countResult.rows[0].count),
+      };
+    }
+  );
 
   // Get a single bookmark
-  fastify.get('/bookmarks/:id', { schema: { params: idParamsSchema } }, async (request, reply) => {
-    const { id } = request.params;
+  fastify.get(
+    '/bookmarks/:id',
+    { ...requireLogin, schema: { params: idParamsSchema } },
+    async (request, reply) => {
+      const { id } = request.params;
 
-    const { rows } = await db.query(
-      `SELECT id, title, url, description, created_at, updated_at
-         FROM bookmarks WHERE id = $1`,
-      [id]
-    );
-    if (rows.length === 0) {
-      return reply.code(404).send({ error: 'Bookmark not found' });
-    }
-
-    const tags = await fetchTagNames(db, id);
-    return { ...rows[0], tags };
-  });
-
-  // Create a bookmark
-  fastify.post('/bookmarks', { schema: { body: bookmarkBodySchema } }, async (request, reply) => {
-    const { title, url, description = null, tags = [] } = request.body;
-
-    const bookmark = await withTransaction(db, async (client) => {
-      const { rows } = await client.query(
-        `INSERT INTO bookmarks (user_id, title, url, description)
-         VALUES ($1, $2, $3, $4)
-         RETURNING id, title, url, description, created_at, updated_at`,
-        [request.user.id, title, url, description]
+      const { rows } = await db.query(
+        `SELECT id, title, url, description, created_at, updated_at
+           FROM bookmarks WHERE id = $1`,
+        [id]
       );
-      const savedTags = await replaceTags(client, rows[0].id, tags);
-      return { ...rows[0], tags: savedTags };
-    });
+      if (rows.length === 0) {
+        return reply.code(404).send({ error: 'Bookmark not found' });
+      }
 
-    return reply.code(201).send(bookmark);
-  });
+      const tags = await fetchTagNames(db, id);
+      return { ...rows[0], tags };
+    }
+  );
+
+  // Create a bookmark owned by the current user
+  fastify.post(
+    '/bookmarks',
+    { ...requireLogin, schema: { body: bookmarkBodySchema } },
+    async (request, reply) => {
+      const { title, url, description = null, tags = [] } = request.body;
+
+      const bookmark = await withTransaction(db, async (client) => {
+        const { rows } = await client.query(
+          `INSERT INTO bookmarks (user_id, title, url, description)
+           VALUES ($1, $2, $3, $4)
+           RETURNING id, title, url, description, created_at, updated_at`,
+          [request.user.id, title, url, description]
+        );
+        const savedTags = await replaceTags(client, rows[0].id, tags);
+        return { ...rows[0], tags: savedTags };
+      });
+
+      return reply.code(201).send(bookmark);
+    }
+  );
 
   // Replace a bookmark's fields and tags
   fastify.put(
     '/bookmarks/:id',
-    { schema: { params: idParamsSchema, body: bookmarkBodySchema } },
+    { ...requireLogin, schema: { params: idParamsSchema, body: bookmarkBodySchema } },
     async (request, reply) => {
       const { id } = request.params;
       const { title, url, description = null, tags = [] } = request.body;
@@ -139,14 +154,20 @@ async function bookmarkRoutes(fastify) {
   );
 
   // Delete a bookmark
-  fastify.delete('/bookmarks/:id', { schema: { params: idParamsSchema } }, async (request, reply) => {
-    const { rowCount } = await db.query('DELETE FROM bookmarks WHERE id = $1', [request.params.id]);
+  fastify.delete(
+    '/bookmarks/:id',
+    { ...requireLogin, schema: { params: idParamsSchema } },
+    async (request, reply) => {
+      const { rowCount } = await db.query('DELETE FROM bookmarks WHERE id = $1', [
+        request.params.id,
+      ]);
 
-    if (rowCount === 0) {
-      return reply.code(404).send({ error: 'Bookmark not found' });
+      if (rowCount === 0) {
+        return reply.code(404).send({ error: 'Bookmark not found' });
+      }
+      return reply.code(204).send();
     }
-    return reply.code(204).send();
-  });
+  );
 }
 
 module.exports = bookmarkRoutes;
