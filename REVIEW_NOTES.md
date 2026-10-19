@@ -94,6 +94,7 @@ Other valid findings on #5:
 
 - Codzee correctly kept the issues that live on `main` open (SQL injection, ownership check, pagination offset), because #5 does not change them.
 - Codzee closed findings it had raised itself, which was the purpose of the second commit.
+- `ca9a811` also fixed the two issues Codzee had missed or only partly caught (the page number in the cache key and the missing `await`). Codzee did not mention them in its fix report, since it never raised them.
 
 ## 7. PR #6 and PR #7: findings
 
@@ -121,6 +122,19 @@ All findings below were checked and are valid.
 On both PRs, Codzee warned about merge conflicts between #5, #6 and #7. The warning was correct: all three edit overlapping files.
 
 ## 8. Overall
+
+**What worked well**
+
+- **No false positives:** every finding across #5, #6 and #7 was valid when checked against the code.
+- **Reviews beyond the diff:** on #5 it flagged SQL injection, the missing ownership check and the pagination bug from code already on `main`.
+- **Catches weak tests:** it found test gaps in my fix commits (fake Redis ignoring the TTL, no HIT assertion, a colon-collision test that proved nothing) and in #6 (test app missing the error-handler plugin).
+- **Catches incomplete fixes:** on #7 it noticed the placeholder `JWT_SECRET` still passes the new startup check.
+- **Good re-review behaviour:** it marked its own findings fixed after each commit and kept unrelated `main` issues open.
+- **Clear explanations with concrete impact:** for example "about 102 queries instead of 2" for the N+1.
+- **Cross-PR awareness:** it warned that #5, #6 and #7 would conflict.
+- **Quick acknowledgement and labels:** a 👀 reaction on request and automatic size labels.
+
+**Limits**
 
 - **False positives:** none found across all reviews.
 - **Missed:** the missing `await` on `clearListCache`, and the page number in the cache key (partial).
@@ -169,4 +183,3 @@ Open findings from #6 and #7, left as known follow-ups.
 **Cross-PR**
 
 - Resolve the merge conflicts between #5, #6 and #7 (overlapping edits in `routes/bookmarks.js`, `bookmarkService.js` and `routes/auth.js`).
-- The page number in the #5 cache key and the missing `await` are fixed in `ca9a811`.
