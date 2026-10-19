@@ -6,6 +6,7 @@ const {
   readCache,
   writeCache,
   clearListCache,
+  clearBookmarkCache,
 } = require('../services/cache');
 
 const bookmarkBodySchema = {
@@ -47,9 +48,10 @@ async function bookmarkRoutes(fastify) {
     '/bookmarks',
     { ...requireLogin, schema: { querystring: listQuerySchema } },
     async (request, reply) => {
-      const { search, tag, limit } = request.query;
+      const { page, limit, search, tag } = request.query;
 
-      const cacheKey = listCacheKey({ search, tag, limit });
+      // Lists are per user and per page, so both are part of the key
+      const cacheKey = listCacheKey({ userId: request.user.id, page, limit, search, tag });
       const cachedResponse = await readCache(redis, cacheKey);
       if (cachedResponse) {
         reply.header('X-Cache', 'HIT');
@@ -94,8 +96,8 @@ async function bookmarkRoutes(fastify) {
     async (request, reply) => {
       const bookmark = await bookmarkService.createBookmark(db, request.user.id, request.body);
 
-      // A new bookmark changes every list page, so drop the cached lists
-      clearListCache(redis);
+      // A new bookmark changes every list page of this user, so drop those cached lists
+      await clearListCache(redis, request.user.id);
 
       return reply.code(201).send(bookmark);
     }
@@ -109,6 +111,8 @@ async function bookmarkRoutes(fastify) {
       if (!bookmark) {
         return reply.code(404).send({ error: 'Bookmark not found' });
       }
+
+      await clearBookmarkCache(redis, request.user.id, request.params.id);
       return bookmark;
     }
   );
@@ -121,6 +125,8 @@ async function bookmarkRoutes(fastify) {
       if (!wasDeleted) {
         return reply.code(404).send({ error: 'Bookmark not found' });
       }
+
+      await clearBookmarkCache(redis, request.user.id, request.params.id);
       return reply.code(204).send();
     }
   );

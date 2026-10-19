@@ -14,19 +14,22 @@ Entries expire after `CACHE_TTL_SECONDS` (default `60`).
 
 | Key                                      | Holds                          |
 | ---------------------------------------- | ------------------------------ |
-| `bookmarks:list:<search>:<tag>:<limit>`  | One list response              |
+| `bookmarks:list:<userId>:<page>:<limit>:<search>:<tag>` | One page of one user's list |
 | `bookmark:<id>`                          | One bookmark with its tags     |
 
 ## Invalidation
 
-Creating a bookmark clears all `bookmarks:list:*` keys so new items show up in lists.
+- Creating a bookmark clears that user's `bookmarks:list:<userId>:*` keys.
+- Updating or deleting a bookmark also removes its `bookmark:<id>` key and clears that user's list keys.
+
+List keys are found with `SCAN`, never `KEYS`, so clearing does not block Redis.
 
 ## Configuration
 
 | Variable            | Default                  | Meaning                              |
 | ------------------- | ------------------------ | ------------------------------------ |
 | `REDIS_URL`         | `redis://localhost:6379` | Where Redis is running               |
-| `CACHE_TTL_SECONDS` | `60`                     | Lifetime of each cached response     |
+| `CACHE_TTL_SECONDS` | `60`                     | Lifetime of each cached response. Must be a whole number of at least 1, otherwise the app refuses to start |
 
 The Redis connection is opened lazily, so the app and the test suite start even when Redis is not running;
 only cached routes need it.
