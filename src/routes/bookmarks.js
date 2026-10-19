@@ -45,7 +45,7 @@ async function bookmarkRoutes(fastify) {
     '/bookmarks/:id',
     { ...requireLogin, schema: { params: idParamsSchema } },
     async (request, reply) => {
-      const bookmark = await bookmarkService.getBookmark(db, request.params.id);
+      const bookmark = await bookmarkService.getBookmark(db, request.user.id, request.params.id);
       if (!bookmark) {
         return reply.code(404).send({ error: 'Bookmark not found' });
       }
@@ -66,7 +66,12 @@ async function bookmarkRoutes(fastify) {
     '/bookmarks/:id',
     { ...requireLogin, schema: { params: idParamsSchema, body: bookmarkBodySchema } },
     async (request, reply) => {
-      const bookmark = await bookmarkService.updateBookmark(db, request.params.id, request.body);
+      const bookmark = await bookmarkService.updateBookmark(
+        db,
+        request.user.id,
+        request.params.id,
+        request.body
+      );
       if (!bookmark) {
         return reply.code(404).send({ error: 'Bookmark not found' });
       }
@@ -78,7 +83,7 @@ async function bookmarkRoutes(fastify) {
     '/bookmarks/:id',
     { ...requireLogin, schema: { params: idParamsSchema } },
     async (request, reply) => {
-      const wasDeleted = await bookmarkService.deleteBookmark(db, request.params.id);
+      const wasDeleted = await bookmarkService.deleteBookmark(db, request.user.id, request.params.id);
       if (!wasDeleted) {
         return reply.code(404).send({ error: 'Bookmark not found' });
       }

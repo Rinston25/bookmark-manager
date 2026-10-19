@@ -9,7 +9,11 @@ function buildListFilters(userId, { search, tag }) {
   const params = [userId];
 
   if (search) {
-    conditions.push(`b.title ILIKE '%${search}%'`);
+    // The search text is passed as a parameter, never pasted into the SQL.
+    // % _ and \ are escaped so they match literally instead of acting as wildcards.
+    const escapedSearch = search.replace(/[\\%_]/g, '\\$&');
+    params.push(`%${escapedSearch}%`);
+    conditions.push(`b.title ILIKE $${params.length}`);
   }
 
   if (tag) {
@@ -27,7 +31,7 @@ function buildListFilters(userId, { search, tag }) {
 // Returns one page of the user's bookmarks plus the total number of matches
 async function listBookmarks(db, userId, { page, limit, search, tag }) {
   const { whereClause, params } = buildListFilters(userId, { search, tag });
-  const offset = (page - 1) * limit + 1;
+  const offset = (page - 1) * limit;
 
   const countResult = await db.query(
     `SELECT COUNT(*) FROM bookmarks b WHERE ${whereClause}`,
@@ -56,11 +60,12 @@ async function listBookmarks(db, userId, { page, limit, search, tag }) {
   };
 }
 
-// Returns one bookmark with its tags, or null if it does not exist
-async function getBookmark(db, bookmarkId) {
+// Returns one of the user's bookmarks with its tags, or null if it does not exist
+// or belongs to someone else (callers answer 404 for both, so ids are not revealed)
+async function getBookmark(db, userId, bookmarkId) {
   const { rows } = await db.query(
-    `SELECT ${BOOKMARK_COLUMNS} FROM bookmarks b WHERE b.id = $1`,
-    [bookmarkId]
+    `SELECT ${BOOKMARK_COLUMNS} FROM bookmarks b WHERE b.id = $1 AND b.user_id = $2`,
+    [bookmarkId, userId]
   );
   if (rows.length === 0) return null;
 
@@ -82,15 +87,15 @@ async function createBookmark(db, userId, { title, url, description = null, tags
   });
 }
 
-// Replaces a bookmark's fields and tags. Returns null if it does not exist.
-async function updateBookmark(db, bookmarkId, { title, url, description = null, tags = [] }) {
+// Replaces a bookmark's fields and tags. Returns null if the user has no such bookmark.
+async function updateBookmark(db, userId, bookmarkId, { title, url, description = null, tags = [] }) {
   return withTransaction(db, async (client) => {
     const { rows } = await client.query(
       `UPDATE bookmarks
           SET title = $1, url = $2, description = $3, updated_at = NOW()
-        WHERE id = $4
+        WHERE id = $4 AND user_id = $5
       RETURNING ${BOOKMARK_COLUMNS}`,
-      [title, url, description, bookmarkId]
+      [title, url, description, bookmarkId, userId]
     );
     if (rows.length === 0) return null;
 
@@ -99,9 +104,12 @@ async function updateBookmark(db, bookmarkId, { title, url, description = null, 
   });
 }
 
-// Deletes a bookmark. Returns true if a row was removed.
-async function deleteBookmark(db, bookmarkId) {
-  const { rowCount } = await db.query('DELETE FROM bookmarks WHERE id = $1', [bookmarkId]);
+// Deletes one of the user's bookmarks. Returns true if a row was removed.
+async function deleteBookmark(db, userId, bookmarkId) {
+  const { rowCount } = await db.query(
+    'DELETE FROM bookmarks WHERE id = $1 AND user_id = $2',
+    [bookmarkId, userId]
+  );
   return rowCount > 0;
 }
 

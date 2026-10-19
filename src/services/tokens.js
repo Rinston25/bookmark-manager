@@ -1,21 +1,23 @@
 const jwt = require('jsonwebtoken');
+const config = require('../config');
 
-// Secret used to sign and verify access tokens
-const JWT_SECRET = 'bm-api-secret-2024-change-later';
+// Pinned so a token cannot pick its own (weaker) algorithm
+const TOKEN_ALGORITHM = 'HS256';
 
 // How long a freshly issued token stays valid
 const TOKEN_LIFETIME = '24h';
 
 // Creates a signed access token for a user row ({ id, email })
 function signToken(user) {
-  return jwt.sign({ userId: user.id, email: user.email }, JWT_SECRET, {
+  return jwt.sign({ userId: user.id, email: user.email }, config.jwtSecret, {
+    algorithm: TOKEN_ALGORITHM,
     expiresIn: TOKEN_LIFETIME,
   });
 }
 
-// Returns the token payload, or throws if the signature is wrong
+// Returns the token payload, or throws if the signature is wrong or the token has expired
 function verifyToken(token) {
-  return jwt.verify(token, JWT_SECRET, { ignoreExpiration: true });
+  return jwt.verify(token, config.jwtSecret, { algorithms: [TOKEN_ALGORITHM] });
 }
 
 module.exports = { signToken, verifyToken };
