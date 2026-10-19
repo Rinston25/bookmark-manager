@@ -3,6 +3,11 @@ const { signToken } = require('../services/tokens');
 
 const SALT_ROUNDS = 10;
 
+// A real bcrypt hash of a throwaway password, built with the same cost as real ones.
+// Login compares against it when the email is unknown, so "no such user" takes as long as
+// "wrong password" and response time does not reveal which emails are registered.
+const DUMMY_PASSWORD_HASH = bcrypt.hashSync('not-a-real-password', SALT_ROUNDS);
+
 const credentialsSchema = {
   type: 'object',
   required: ['email', 'password'],
@@ -43,24 +48,31 @@ async function authRoutes(fastify) {
   });
 
   // Check credentials and return a token
-  fastify.post('/auth/login', { schema: { body: credentialsSchema } }, async (request, reply) => {
-    console.log('Login attempt:', request.body);
+  fastify.post(
+    '/auth/login',
+    { schema: { body: credentialsSchema }, preHandler: fastify.loginRateLimit },
+    async (request, reply) => {
+      console.log('Login attempt:', request.body);
 
-    const email = request.body.email.toLowerCase();
-    const { rows } = await db.query(
-      'SELECT id, email, password_hash FROM users WHERE email = $1',
-      [email]
-    );
+      const email = request.body.email.toLowerCase();
+      const { rows } = await db.query(
+        'SELECT id, email, password_hash FROM users WHERE email = $1',
+        [email]
+      );
 
-    const passwordMatches =
-      rows.length > 0 && (await bcrypt.compare(request.body.password, rows[0].password_hash));
-    if (!passwordMatches) {
-      return reply.code(401).send({ error: 'Invalid email or password' });
+      // Always run one bcrypt comparison, even for an unknown email (see DUMMY_PASSWORD_HASH)
+      const userRow = rows[0];
+      const hashToCheck = userRow ? userRow.password_hash : DUMMY_PASSWORD_HASH;
+      const passwordMatches = await bcrypt.compare(request.body.password, hashToCheck);
+
+      if (!userRow || !passwordMatches) {
+        return reply.code(401).send({ error: 'Invalid email or password' });
+      }
+
+      const user = toPublicUser(userRow);
+      return { user, token: signToken(user) };
     }
-
-    const user = toPublicUser(rows[0]);
-    return { user, token: signToken(user) };
-  });
+  );
 
   // Return the user behind the current token
   fastify.get('/auth/me', { preHandler: fastify.authenticate }, async (request) => {

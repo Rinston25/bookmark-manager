@@ -63,6 +63,12 @@ curl -X POST localhost:3000/bookmarks \
 curl 'localhost:3000/bookmarks?search=fastify&tag=docs&page=1&limit=10'
 ```
 
+### Login rate limit
+
+`POST /auth/login` allows `LOGIN_RATE_LIMIT_MAX` attempts (default `5`) per IP address and email in each
+`LOGIN_RATE_LIMIT_WINDOW_SECONDS` (default `900`). After that it answers `429` with a `Retry-After`
+header. Counters live in memory, so they reset on restart and are not shared between instances.
+
 ## Notes
 
 There is no authentication yet: every request acts as the seeded demo user (`demo@example.com`).
