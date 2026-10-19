@@ -1,5 +1,6 @@
 const Fastify = require('fastify');
 const dbPlugin = require('./plugins/db');
+const redisPlugin = require('./plugins/redis');
 const authPlugin = require('./plugins/auth');
 const errorHandlerPlugin = require('./plugins/errorHandler');
 const authRoutes = require('./routes/auth');
@@ -11,6 +12,7 @@ function buildApp(options = {}) {
 
   app.register(errorHandlerPlugin);
   app.register(dbPlugin);
+  app.register(redisPlugin);
   app.register(authPlugin);
   app.register(authRoutes);
   app.register(bookmarkRoutes);
