@@ -1,0 +1,23 @@
+{
+  "name": "bookmark-manager",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Bookmark Manager REST API built with Fastify, PostgreSQL and Redis",
+  "main": "src/server.js",
+  "scripts": {
+    "dev": "node --watch src/server.js",
+    "start": "node src/server.js",
+    "db:migrate": "node src/db/migrate.js",
+    "test": "echo \"No tests yet\""
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "dotenv": "^16.4.5",
+    "fastify": "^4.28.1",
+    "fastify-plugin": "^4.5.1",
+    "ioredis": "^5.4.1",
+    "pg": "^8.12.0"
+  }
+}
